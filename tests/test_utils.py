@@ -1,87 +1,352 @@
+# coding=utf-8
+# Copyright 2024 HuggingFace Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import inspect
 import os
-import unittest
-import shutil
+import pathlib
 import tempfile
+import textwrap
+import unittest
 
-from pathlib import Path
+import pytest
+from IPython.core.interactiveshell import InteractiveShell
 
-
-def str_to_bool(value) -> int:
-    """
-    Converts a string representation of truth to `True` (1) or `False` (0).
-
-    True values are `y`, `yes`, `t`, `true`, `on`, and `1`; False value are `n`, `no`, `f`, `false`, `off`, and `0`;
-    """
-    value = value.lower()
-    if value in ("y", "yes", "t", "true", "on", "1"):
-        return 1
-    elif value in ("n", "no", "f", "false", "off", "0"):
-        return 0
-    else:
-        raise ValueError(f"invalid truth value {value}")
+from smolagents import Tool
+from smolagents.tools import tool
+from smolagents.utils import get_source, parse_code_blobs
 
 
-def get_int_from_env(env_keys, default):
-    """Returns the first positive env value found in the `env_keys` list or the default."""
-    for e in env_keys:
-        val = int(os.environ.get(e, -1))
-        if val >= 0:
-            return val
-    return default
+class AgentTextTests(unittest.TestCase):
+    def test_parse_code_blobs(self):
+        with pytest.raises(ValueError):
+            parse_code_blobs("Wrong blob!")
+
+        # Parsing mardkwon with code blobs should work
+        output = parse_code_blobs("""
+Here is how to solve the problem:
+Code:
+```py
+import numpy as np
+```<end_code>
+""")
+        assert output == "import numpy as np"
+
+        # Parsing code blobs should work
+        code_blob = "import numpy as np"
+        output = parse_code_blobs(code_blob)
+        assert output == code_blob
+
+    def test_multiple_code_blobs(self):
+        test_input = """Here's a function that adds numbers:
+```python
+def add(a, b):
+    return a + b
+```
+And here's a function that multiplies them:
+```py
+def multiply(a, b):
+    return a * b
+```"""
+
+        expected_output = """def add(a, b):
+    return a + b
+
+def multiply(a, b):
+    return a * b"""
+        result = parse_code_blobs(test_input)
+        assert result == expected_output
 
 
-def parse_flag_from_env(key, default=False):
-    """Returns truthy value for `key` from the env if available else the default."""
-    value = os.environ.get(key, str(default))
-    return (
-        str_to_bool(value) == 1
-    )  # As its name indicates `str_to_bool` actually returns an int...
+@pytest.fixture(scope="function")
+def ipython_shell():
+    """Reset IPython shell before and after each test."""
+    shell = InteractiveShell.instance()
+    shell.reset()  # Clean before test
+    yield shell
+    shell.reset()  # Clean after test
 
 
-_run_slow_tests = parse_flag_from_env("RUN_SLOW", default=False)
+@pytest.mark.parametrize(
+    "obj_name, code_blob",
+    [
+        ("test_func", "def test_func():\n    return 42"),
+        ("TestClass", "class TestClass:\n    ..."),
+    ],
+)
+def test_get_source_ipython(ipython_shell, obj_name, code_blob):
+    ipython_shell.run_cell(code_blob, store_history=True)
+    obj = ipython_shell.user_ns[obj_name]
+    assert get_source(obj) == code_blob
 
 
-def skip(test_case):
-    "Decorator that skips a test unconditionally"
-    return unittest.skip("Test was skipped")(test_case)
+def test_get_source_standard_class():
+    class TestClass: ...
+
+    source = get_source(TestClass)
+    assert source == "class TestClass: ..."
+    assert source == textwrap.dedent(inspect.getsource(TestClass)).strip()
 
 
-def slow(test_case):
-    """
-    Decorator marking a test as slow. Slow tests are skipped by default. Set the RUN_SLOW environment variable to a
-    truthy value to run them.
-    """
-    return unittest.skipUnless(_run_slow_tests, "test is slow")(test_case)
+def test_get_source_standard_function():
+    def test_func(): ...
+
+    source = get_source(test_func)
+    assert source == "def test_func(): ..."
+    assert source == textwrap.dedent(inspect.getsource(test_func)).strip()
 
 
-class TempDirTestCase(unittest.TestCase):
-    """
-    A TestCase class that keeps a single `tempfile.TemporaryDirectory` open for the duration of the class, wipes its
-    data at the start of a test, and then destroyes it at the end of the TestCase.
+def test_get_source_ipython_errors_empty_cells(ipython_shell):
+    test_code = textwrap.dedent("""class TestClass:\n    ...""").strip()
+    ipython_shell.user_ns["In"] = [""]
+    exec(test_code)
+    with pytest.raises(ValueError, match="No code cells found in IPython session"):
+        get_source(locals()["TestClass"])
 
-    Useful for when a class or API requires a single constant folder throughout it's use, such as Weights and Biases
 
-    The temporary directory location will be stored in `self.tmpdir`
-    """
+def test_get_source_ipython_errors_definition_not_found(ipython_shell):
+    test_code = textwrap.dedent("""class TestClass:\n    ...""").strip()
+    ipython_shell.user_ns["In"] = ["", "print('No class definition here')"]
+    exec(test_code)
+    with pytest.raises(ValueError, match="Could not find source code for TestClass in IPython history"):
+        get_source(locals()["TestClass"])
 
-    clear_on_setup = True
 
-    @classmethod
-    def setUpClass(cls):
-        "Creates a `tempfile.TemporaryDirectory` and stores it in `cls.tmpdir`"
-        cls.tmpdir = Path(tempfile.mkdtemp())
+def test_get_source_ipython_errors_type_error():
+    with pytest.raises(TypeError, match="Expected class or callable"):
+        get_source(None)
 
-    @classmethod
-    def tearDownClass(cls):
-        "Remove `cls.tmpdir` after test suite has finished"
-        if os.path.exists(cls.tmpdir):
-            shutil.rmtree(cls.tmpdir)
 
-    def setUp(self):
-        "Destroy all contents in `self.tmpdir`, but not `self.tmpdir`"
-        if self.clear_on_setup:
-            for path in self.tmpdir.glob("**/*"):
-                if path.is_file():
-                    path.unlink()
-                elif path.is_dir():
-                    shutil.rmtree(path)
+def test_e2e_class_tool_save():
+    class TestTool(Tool):
+        name = "test_tool"
+        description = "Test tool description"
+        inputs = {
+            "task": {
+                "type": "string",
+                "description": "tool input",
+            }
+        }
+        output_type = "string"
+
+        def forward(self, task: str):
+            import IPython  # noqa: F401
+
+            return task
+
+    test_tool = TestTool()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        test_tool.save(tmp_dir)
+        assert set(os.listdir(tmp_dir)) == {"requirements.txt", "app.py", "tool.py"}
+        assert (
+            pathlib.Path(tmp_dir, "tool.py").read_text()
+            == """from smolagents.tools import Tool
+import IPython
+
+class TestTool(Tool):
+    name = "test_tool"
+    description = "Test tool description"
+    inputs = {'task': {'type': 'string', 'description': 'tool input'}}
+    output_type = "string"
+
+    def forward(self, task: str):
+        import IPython  # noqa: F401
+
+        return task
+
+    def __init__(self, *args, **kwargs):
+        self.is_initialized = False
+"""
+        )
+        requirements = set(pathlib.Path(tmp_dir, "requirements.txt").read_text().split())
+        assert requirements == {"IPython", "smolagents"}
+        assert (
+            pathlib.Path(tmp_dir, "app.py").read_text()
+            == """from smolagents import launch_gradio_demo
+from typing import Optional
+from tool import TestTool
+
+tool = TestTool()
+
+launch_gradio_demo(tool)
+"""
+        )
+
+
+def test_e2e_ipython_class_tool_save():
+    shell = InteractiveShell.instance()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        code_blob = textwrap.dedent(f"""
+        from smolagents.tools import Tool
+        class TestTool(Tool):
+            name = "test_tool"
+            description = "Test tool description"
+            inputs = {{"task": {{"type": "string",
+                    "description": "tool input",
+                }}
+            }}
+            output_type = "string"
+
+            def forward(self, task: str):
+                import IPython  # noqa: F401
+
+                return task
+        TestTool().save("{tmp_dir}")
+    """)
+        assert shell.run_cell(code_blob, store_history=True).success
+        assert set(os.listdir(tmp_dir)) == {"requirements.txt", "app.py", "tool.py"}
+        assert (
+            pathlib.Path(tmp_dir, "tool.py").read_text()
+            == """from smolagents.tools import Tool
+import IPython
+
+class TestTool(Tool):
+    name = "test_tool"
+    description = "Test tool description"
+    inputs = {'task': {'type': 'string', 'description': 'tool input'}}
+    output_type = "string"
+
+    def forward(self, task: str):
+        import IPython  # noqa: F401
+
+        return task
+
+    def __init__(self, *args, **kwargs):
+        self.is_initialized = False
+"""
+        )
+        requirements = set(pathlib.Path(tmp_dir, "requirements.txt").read_text().split())
+        assert requirements == {"IPython", "smolagents"}
+        assert (
+            pathlib.Path(tmp_dir, "app.py").read_text()
+            == """from smolagents import launch_gradio_demo
+from typing import Optional
+from tool import TestTool
+
+tool = TestTool()
+
+launch_gradio_demo(tool)
+"""
+        )
+
+
+def test_e2e_function_tool_save():
+    @tool
+    def test_tool(task: str) -> str:
+        """
+        Test tool description
+
+        Args:
+            task: tool input
+        """
+        import IPython  # noqa: F401
+
+        return task
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        test_tool.save(tmp_dir)
+        assert set(os.listdir(tmp_dir)) == {"requirements.txt", "app.py", "tool.py"}
+        assert (
+            pathlib.Path(tmp_dir, "tool.py").read_text()
+            == """from smolagents import Tool
+from typing import Optional
+
+class SimpleTool(Tool):
+    name = "test_tool"
+    description = "Test tool description"
+    inputs = {"task":{"type":"string","description":"tool input"}}
+    output_type = "string"
+
+    def forward(self, task: str) -> str:
+        \"""
+        Test tool description
+
+        Args:
+            task: tool input
+        \"""
+        import IPython  # noqa: F401
+
+        return task"""
+        )
+        requirements = set(pathlib.Path(tmp_dir, "requirements.txt").read_text().split())
+        assert requirements == {"smolagents"}  # FIXME: IPython should be in the requirements
+        assert (
+            pathlib.Path(tmp_dir, "app.py").read_text()
+            == """from smolagents import launch_gradio_demo
+from typing import Optional
+from tool import SimpleTool
+
+tool = SimpleTool()
+
+launch_gradio_demo(tool)
+"""
+        )
+
+
+def test_e2e_ipython_function_tool_save():
+    shell = InteractiveShell.instance()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        code_blob = textwrap.dedent(f"""
+        from smolagents import tool
+
+        @tool
+        def test_tool(task: str) -> str:
+            \"""
+            Test tool description
+
+            Args:
+                task: tool input
+            \"""
+            import IPython  # noqa: F401
+
+            return task
+
+        test_tool.save("{tmp_dir}")
+        """)
+        assert shell.run_cell(code_blob, store_history=True).success
+        assert set(os.listdir(tmp_dir)) == {"requirements.txt", "app.py", "tool.py"}
+        assert (
+            pathlib.Path(tmp_dir, "tool.py").read_text()
+            == """from smolagents import Tool
+from typing import Optional
+
+class SimpleTool(Tool):
+    name = "test_tool"
+    description = "Test tool description"
+    inputs = {"task":{"type":"string","description":"tool input"}}
+    output_type = "string"
+
+    def forward(self, task: str) -> str:
+        \"""
+        Test tool description
+
+        Args:
+            task: tool input
+        \"""
+        import IPython  # noqa: F401
+
+        return task"""
+        )
+        requirements = set(pathlib.Path(tmp_dir, "requirements.txt").read_text().split())
+        assert requirements == {"smolagents"}  # FIXME: IPython should be in the requirements
+        assert (
+            pathlib.Path(tmp_dir, "app.py").read_text()
+            == """from smolagents import launch_gradio_demo
+from typing import Optional
+from tool import SimpleTool
+
+tool = SimpleTool()
+
+launch_gradio_demo(tool)
+"""
+        )

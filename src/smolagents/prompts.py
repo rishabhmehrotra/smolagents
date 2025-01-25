@@ -125,15 +125,15 @@ Observation: "image_1.jpg"
 
 Action:
 {
-  "tool_name": "image_transformer",
-  "tool_arguments": {"image": "image_1.jpg"}
+  "name": "image_transformer",
+  "arguments": {"image": "image_1.jpg"}
 }
 
-To provide the final answer to the task, use an action blob with "tool_name": "final_answer" tool. It is the only way to complete the task, else you will be stuck on a loop. So your final output should look like this:
+To provide the final answer to the task, use an action blob with "name": "final_answer" tool. It is the only way to complete the task, else you will be stuck on a loop. So your final output should look like this:
 Action:
 {
-  "tool_name": "final_answer",
-  "tool_arguments": {"answer": "insert your final answer here"}
+  "name": "final_answer",
+  "arguments": {"answer": "insert your final answer here"}
 }
 
 
@@ -143,22 +143,22 @@ Task: "Generate an image of the oldest person in this document."
 
 Action:
 {
-  "tool_name": "document_qa",
-  "tool_arguments": {"document": "document.pdf", "question": "Who is the oldest person mentioned?"}
+  "name": "document_qa",
+  "arguments": {"document": "document.pdf", "question": "Who is the oldest person mentioned?"}
 }
 Observation: "The oldest person in the document is John Doe, a 55 year old lumberjack living in Newfoundland."
 
 Action:
 {
-  "tool_name": "image_generator",
-  "tool_arguments": {"prompt": "A portrait of John Doe, a 55-year-old man living in Canada."}
+  "name": "image_generator",
+  "arguments": {"prompt": "A portrait of John Doe, a 55-year-old man living in Canada."}
 }
 Observation: "image.png"
 
 Action:
 {
-  "tool_name": "final_answer",
-  "tool_arguments": "image.png"
+  "name": "final_answer",
+  "arguments": "image.png"
 }
 
 ---
@@ -166,15 +166,15 @@ Task: "What is the result of the following operation: 5 + 3 + 1294.678?"
 
 Action:
 {
-    "tool_name": "python_interpreter",
-    "tool_arguments": {"code": "5 + 3 + 1294.678"}
+    "name": "python_interpreter",
+    "arguments": {"code": "5 + 3 + 1294.678"}
 }
 Observation: 1302.678
 
 Action:
 {
-  "tool_name": "final_answer",
-  "tool_arguments": "1302.678"
+  "name": "final_answer",
+  "arguments": "1302.678"
 }
 
 ---
@@ -182,23 +182,23 @@ Task: "Which city has the highest population , Guangzhou or Shanghai?"
 
 Action:
 {
-    "tool_name": "search",
-    "tool_arguments": "Population Guangzhou"
+    "name": "search",
+    "arguments": "Population Guangzhou"
 }
 Observation: ['Guangzhou has a population of 15 million inhabitants as of 2021.']
 
 
 Action:
 {
-    "tool_name": "search",
-    "tool_arguments": "Population Shanghai"
+    "name": "search",
+    "arguments": "Population Shanghai"
 }
 Observation: '26 million (2019)'
 
 Action:
 {
-  "tool_name": "final_answer",
-  "tool_arguments": "Shanghai"
+  "name": "final_answer",
+  "arguments": "Shanghai"
 }
 
 
@@ -373,7 +373,7 @@ Here are the rules you should always follow to solve your task:
 4. Take care to not chain too many sequential tool calls in the same code block, especially when the output format is unpredictable. For instance, a call to search has an unpredictable return format, so do not have another tool call that depends on its output in the same block: rather output results with print() to use them in the next block.
 5. Call a tool only when needed, and never re-do a tool call that you previously did with the exact same parameters.
 6. Don't name any new variable with the same name as a tool: for instance don't name a variable 'final_answer'.
-7. Never create any notional variables in our code, as having these in your logs might derail you from the true variables.
+7. Never create any notional variables in our code, as having these in your logs will derail you from the true variables.
 8. You can use imports in your code, but only from the following list of modules: {{authorized_imports}}
 9. The state persists between code executions: so if in one step you've created variables or imported modules, these will all persist.
 10. Don't give up! You're in charge of solving the task, not providing directions to solve it.

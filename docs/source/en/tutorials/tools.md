@@ -89,8 +89,8 @@ model_downloads_tool.push_to_hub("{your_username}/hf-model-downloads", token="<Y
 ```
 
 For the push to Hub to work, your tool will need to respect some rules:
-- All method are self-contained, e.g. use variables that come either from their args.
-- As per the above point, **all imports should be defined directky within the tool's functions**, else you will get an error when trying to call [`~Tool.save`] or [`~Tool.push_to_hub`] with your custom tool.
+- All methods are self-contained, e.g. use variables that come either from their args.
+- As per the above point, **all imports should be defined directly within the tool's functions**, else you will get an error when trying to call [`~Tool.save`] or [`~Tool.push_to_hub`] with your custom tool.
 - If you subclass the `__init__` method, you can give it no other argument than `self`. This is because arguments set during a specific tool instance's initialization are hard to track, which prevents from sharing them properly to the hub. And anyway, the idea of making a specific class is that you can already set class attributes for anything you need to hard-code (just set `your_variable=(...)` directly under the `class YourTool(Tool):` line). And of course you can still create a class attribute anywhere in your code by assigning stuff to `self.your_variable`.
 
 
@@ -131,7 +131,7 @@ And voilà, here's your image! 🏖️
 
 <img src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/sunny_beach.webp">
 
-Then you can use this tool just like any other tool.  For example, let's improve the prompt  `a rabbit wearing a space suit` and generate an image of it.
+Then you can use this tool just like any other tool.  For example, let's improve the prompt  `a rabbit wearing a space suit` and generate an image of it. This example also shows how you can pass additional arguments to the agent.
 
 ```python
 from smolagents import CodeAgent, HfApiModel
@@ -140,7 +140,7 @@ model = HfApiModel("Qwen/Qwen2.5-Coder-32B-Instruct")
 agent = CodeAgent(tools=[image_generation_tool], model=model)
 
 agent.run(
-    "Improve this prompt, then generate an image of it.", prompt='A rabbit wearing a space suit'
+    "Improve this prompt, then generate an image of it.", additional_args={'user_prompt': 'A rabbit wearing a space suit'}
 )
 ```
 
@@ -177,7 +177,7 @@ agent.run("How many more blocks (also denoted as layers) are in BERT base encode
 
 ### Manage your agent's toolbox
 
-You can manage an agent's toolbox by adding or replacing a tool.
+You can manage an agent's toolbox by adding or replacing a tool in attribute `agent.tools`, since it is a standard dictionary.
 
 Let's add the `model_download_tool` to an existing agent initialized with only the default toolbox.
 
@@ -187,7 +187,7 @@ from smolagents import HfApiModel
 model = HfApiModel("Qwen/Qwen2.5-Coder-32B-Instruct")
 
 agent = CodeAgent(tools=[], model=model, add_base_tools=True)
-agent.toolbox.add_tool(model_download_tool)
+agent.tools[model_download_tool.name] = model_download_tool
 ```
 Now we can leverage the new tool:
 
@@ -202,20 +202,19 @@ agent.run(
 > Beware of not adding too many tools to an agent: this can overwhelm weaker LLM engines.
 
 
-Use the `agent.toolbox.update_tool()` method to replace an existing tool in the agent's toolbox.
-This is useful if your new tool is a one-to-one replacement of the existing tool because the agent already knows how to perform that specific task.
-Just make sure the new tool follows the same API as the replaced tool or adapt the system prompt template to ensure all examples using the replaced tool are updated.
-
-
 ### Use a collection of tools
 
-You can leverage tool collections by using the ToolCollection object, with the slug of the collection you want to use.
-Then pass them as a list to initialize you agent, and start using them!
+You can leverage tool collections by using the `ToolCollection` object. It supports loading either a collection from the Hub or an MCP server tools.
+
+#### Tool Collection from a collection in the Hub
+
+You can leverage it with the slug of the collection you want to use.
+Then pass them as a list to initialize your agent, and start using them!
 
 ```py
-from transformers import ToolCollection, CodeAgent
+from smolagents import ToolCollection, CodeAgent
 
-image_tool_collection = ToolCollection(
+image_tool_collection = ToolCollection.from_hub(
     collection_slug="huggingface-tools/diffusion-tools-6630bb19a942c2306a2cdb6f",
     token="<YOUR_HUGGINGFACEHUB_API_TOKEN>"
 )
@@ -225,3 +224,24 @@ agent.run("Please draw me a picture of rivers and lakes.")
 ```
 
 To speed up the start, tools are loaded only if called by the agent.
+
+#### Tool Collection from any MCP server
+
+Leverage tools from the hundreds of MCP servers available on [glama.ai](https://glama.ai/mcp/servers) or [smithery.ai](https://smithery.ai/).
+
+The MCP servers tools can be loaded in a `ToolCollection` object as follow:
+
+```py
+from smolagents import ToolCollection, CodeAgent
+from mcp import StdioServerParameters
+
+server_parameters = StdioServerParameters(
+    command="uv",
+    args=["--quiet", "pubmedmcp@0.1.3"],
+    env={"UV_PYTHON": "3.12", **os.environ},
+)
+
+with ToolCollection.from_mcp(server_parameters) as tool_collection:
+    agent = CodeAgent(tools=[*tool_collection.tools], add_base_tools=True)
+    agent.run("Please find a remedy for hangover.")
+```

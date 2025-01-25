@@ -48,10 +48,10 @@ Run the line below to install the required dependencies:
 
 Let's login in order to call the HF Inference API:
 
-```py
-from huggingface_hub import notebook_login
+```
+from huggingface_hub import login
 
-notebook_login()
+login()
 ```
 
 ⚡️ Our agent will be powered by [Qwen/Qwen2.5-Coder-32B-Instruct](https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct) using `HfApiModel` class that uses HF's Inference API: the Inference API allows to quickly and easily run any OS model.
@@ -64,7 +64,7 @@ model_id = "Qwen/Qwen2.5-Coder-32B-Instruct"
 
 ## 🔍 Create a web search tool
 
-For web browsing, we can already use our pre-existing [`DuckDuckGoSearchTool`](https://github.com/huggingface/smolagents/blob/main/src/smolagents/default_tools/search.py) tool to provide a Google search equivalent.
+For web browsing, we can already use our pre-existing [`DuckDuckGoSearchTool`](https://github.com/huggingface/smolagents/blob/main/src/smolagents/default_tools.py#L151-L176) tool to provide a Google search equivalent.
 
 But then we will also need to be able to peak into the page found by the `DuckDuckGoSearchTool`.
 To do so, we could import the library's built-in `VisitWebpageTool`, but we will build it again to see how it's done.
@@ -120,7 +120,7 @@ Now that we have all the tools `search` and `visit_webpage`, we can use them to 
 
 Which configuration to choose for this agent?
 - Web browsing is a single-timeline task that does not require parallel tool calls, so JSON tool calling works well for that. We thus choose a `JsonAgent`.
-- Also, since sometimes web search requires exploring many pages before finding the correct answer, we prefer to increase the number of `max_iterations` to 10.
+- Also, since sometimes web search requires exploring many pages before finding the correct answer, we prefer to increase the number of `max_steps` to 10.
 
 ```py
 from smolagents import (
@@ -137,7 +137,7 @@ model = HfApiModel(model_id)
 web_agent = ToolCallingAgent(
     tools=[DuckDuckGoSearchTool(), visit_webpage],
     model=model,
-    max_iterations=10,
+    max_steps=10,
 )
 ```
 
@@ -169,7 +169,7 @@ manager_agent = CodeAgent(
 That's all! Now let's run our system! We select a question that requires both some calculation and research:
 
 ```py
-answer = manager_agent.run("If LLM trainings continue to scale up at the current rythm until 2030, what would be the electric power in GW required to power the biggest training runs by 2030? What does that correspond to, compared to some contries? Please provide a source for any number used.")
+answer = manager_agent.run("If LLM training continues to scale up at the current rhythm until 2030, what would be the electric power in GW required to power the biggest training runs by 2030? What would that correspond to, compared to some countries? Please provide a source for any numbers used.")
 ```
 
 We get this report as the answer:

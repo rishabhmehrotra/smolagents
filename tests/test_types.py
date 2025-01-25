@@ -18,22 +18,14 @@ import unittest
 import uuid
 from pathlib import Path
 
-from smolagents.types import AgentAudio, AgentImage, AgentText
+from PIL import Image
 from transformers.testing_utils import (
     require_soundfile,
     require_torch,
     require_vision,
 )
-from transformers.utils import (
-    is_soundfile_availble,
-)
 
-import torch
-from PIL import Image
-
-
-if is_soundfile_availble():
-    import soundfile as sf
+from smolagents.types import AgentAudio, AgentImage, AgentText
 
 
 def get_new_path(suffix="") -> str:
@@ -45,6 +37,9 @@ def get_new_path(suffix="") -> str:
 @require_torch
 class AgentAudioTests(unittest.TestCase):
     def test_from_tensor(self):
+        import soundfile as sf
+        import torch
+
         tensor = torch.rand(12, dtype=torch.float64) - 0.5
         agent_type = AgentAudio(tensor)
         path = str(agent_type.to_string())
@@ -62,6 +57,9 @@ class AgentAudioTests(unittest.TestCase):
         self.assertTrue(torch.allclose(tensor, torch.tensor(new_tensor), atol=1e-4))
 
     def test_from_string(self):
+        import soundfile as sf
+        import torch
+
         tensor = torch.rand(12, dtype=torch.float64) - 0.5
         path = get_new_path(suffix=".wav")
         sf.write(path, tensor, 16000)
@@ -76,6 +74,8 @@ class AgentAudioTests(unittest.TestCase):
 @require_torch
 class AgentImageTests(unittest.TestCase):
     def test_from_tensor(self):
+        import torch
+
         tensor = torch.randint(0, 256, (64, 64, 3))
         agent_type = AgentImage(tensor)
         path = str(agent_type.to_string())
@@ -121,4 +121,3 @@ class AgentTextTests(unittest.TestCase):
 
         self.assertEqual(string, agent_type.to_string())
         self.assertEqual(string, agent_type.to_raw())
-        self.assertEqual(string, agent_type)

@@ -6,6 +6,7 @@ wandb
 # Data
 data
 outputs
+data/
 
 # Apple
 .DS_Store
@@ -139,7 +140,7 @@ dmypy.json
 cython_debug/
 
 # PyCharm
-#.idea/
+.idea/
 
 # Interpreter
 interpreter_workspace/
